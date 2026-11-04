@@ -262,8 +262,8 @@ dialog::backdrop { background: rgba(10, 12, 20, 0.45); }
           <select id="aModel"><option value="claude-opus-5-5">Claude Opus 5.5 (best)</option><option value="claude-sonnet-5-5">Claude Sonnet 5.5 (faster, cheaper)</option></select>
         </div>
         <div class="field"><label for="aKey">Anthropic API key</label><input type="password" id="aKey" autocomplete="off" spellcheck="false" placeholder="sk-ant-…"></div>
-        <label class="check"><input type="checkbox" id="aRemember"> Remember the key in this browser</label>
-        <p class="small">The key goes only from your browser to api.anthropic.com. Get one at console.anthropic.com.</p>
+        <label class="check" id="aRememberRow"><input type="checkbox" id="aRemember"> Remember the key in this browser</label>
+        <p class="small" id="aKeyNote">The key goes only from your browser to api.anthropic.com. Get one at console.anthropic.com.</p>
       </div>
 
       <p class="status" id="dlgStatus" role="status" aria-live="polite"></p>
@@ -275,7 +275,8 @@ dialog::backdrop { background: rgba(10, 12, 20, 0.45); }
   </div>
 </dialog>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<!-- integrity: the browser refuses the file if it differs from the published r128 build (hash from cdnjs, checked against the download). -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" integrity="sha512-dLxUelApnYxpLt6K2iomGngnHO83iUvZytA3YjDUCjT0HDOHKXnVYdf3hU4JjM8uEhxf9nD1/ey98U3t2vZ0qQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script>
 /*CORE-START*/
 const FIG_GROUPS = [
@@ -1441,7 +1442,15 @@ function buildFromSpec(mats, spec) {
 
   /* Claude API (direct from the browser with the owner's key) */
   const KEY_STORE = 'smv-anthropic-key';
-  const savedKey = store.get(KEY_STORE);
+  // On a shared host such as *.github.io, every project on the same address shares one localStorage,
+  // so another page there could read a saved key. Never save it on such hosts, and clear any saved earlier.
+  const SHARED_HOST = /(^|\.)github\.io$/i.test(location.hostname);
+  if (SHARED_HOST) {
+    store.del(KEY_STORE);
+    $('aRememberRow').hidden = true;
+    $('aKeyNote').textContent = 'The key goes only from your browser to api.anthropic.com and is not saved on this site; it is forgotten when you close the tab. Get one at console.anthropic.com.';
+  }
+  const savedKey = SHARED_HOST ? null : store.get(KEY_STORE);
   if (savedKey) { $('aKey').value = savedKey; $('aRemember').checked = true; }
   $('aRemember').addEventListener('change', e => { if (!e.target.checked) store.del(KEY_STORE); });
 
@@ -1502,7 +1511,7 @@ function buildFromSpec(mats, spec) {
     }
     const apiKey = $('aKey').value.trim();
     if (!apiKey) { dstatus('Add your Anthropic API key first.'); $('aKey').focus(); return; }
-    if ($('aRemember').checked) store.set(KEY_STORE, apiKey);
+    if (!SHARED_HOST && $('aRemember').checked) store.set(KEY_STORE, apiKey);
     const ctl = new AbortController();
     D.busy = ctl;
     $('dlgCreate').disabled = true; $('dlgStop').hidden = false;
