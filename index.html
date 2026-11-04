@@ -1,0 +1,1666 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- Sketch to Asset: sketch on paper, photograph it, get a 3D model. Source of truth is this file in the repo; see HANDOFF.md. -->
+<title>Sketch to Asset</title>
+<style>
+/* Layout: model cards across the top, then the 3D stage with tabbed controls (Light / Colour / Export) beside it; stacked on phones. */
+:root {
+  --bg: #eef0f3;
+  --surface: #ffffff;
+  --fg: #1b2030;
+  --muted: #5c6478;
+  --line: #cdd2dc;
+  --accent: #2b45c9;
+  --accent-fg: #ffffff;
+  --stage: #e1e6ee;
+  --floor: #f3f5f9;
+  --font: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14171f; --surface: #1d212c; --fg: #e8ebf2; --muted: #99a1b5; --line: #323847;
+    --accent: #8fa3ff; --accent-fg: #10142b; --stage: #202533; --floor: #2b3144;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14171f; --surface: #1d212c; --fg: #e8ebf2; --muted: #99a1b5; --line: #323847;
+  --accent: #8fa3ff; --accent-fg: #10142b; --stage: #202533; --floor: #2b3144;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { color-scheme: light; }
+img { max-width: 100%; }
+body {
+  margin: 0;
+  background: var(--bg); color: var(--fg); font-family: var(--font); font-size: 15px; line-height: 1.45;
+  padding-block: 20px 28px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+button, input, output { font: inherit; }
+.app { max-width: 1120px; margin: 0 auto; display: grid; gap: 16px; }
+.models { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.card { display: grid; gap: 6px; text-align: left; padding: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; color: var(--fg); cursor: pointer; min-width: 0; }
+.card:hover { border-color: var(--accent); }
+.card[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.card .thumb { display: block; width: 100%; aspect-ratio: 4 / 3; border-radius: 6px; background: var(--stage); object-fit: cover; }
+.card .name { font-weight: 600; font-size: 14px; line-height: 1.2; }
+.card .meta { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; margin-top: -4px; }
+.card.empty { border-style: dashed; cursor: default; background: transparent; }
+.card.empty:hover { border-color: var(--line); }
+.card.empty .thumb { background: transparent; border: 1px dashed var(--line); }
+header h1 { font-weight: 700; font-size: 26px; line-height: 1.1; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.layout { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 880px) { .layout { grid-template-columns: minmax(0, 1fr) 340px; } }
+.stage { position: relative; height: min(58vh, 520px); min-height: 330px; background: var(--stage); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+@media (min-width: 880px) { .stage { height: clamp(440px, 70vh, 700px); } }
+canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+canvas:active { cursor: grabbing; }
+.overlay { position: absolute; font-size: 13px; }
+.tl { left: 10px; bottom: 10px; right: 10px; display: flex; flex-wrap: wrap; gap: 8px; pointer-events: none; }
+.tl > * { pointer-events: auto; }
+.tr { right: 10px; top: 10px; }
+.dimlabel { position: absolute; left: 0; top: 0; pointer-events: none; white-space: nowrap; font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }
+.hint { margin: 8px 2px 0; color: var(--muted); font-size: 13px; }
+.chipbtn, button.btn { color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; cursor: pointer; }
+button.btn:hover, .chipbtn:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 600; }
+button.primary:hover { filter: brightness(1.08); }
+button:focus-visible, input:focus-visible, label:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.spin { display: inline-flex; align-items: center; gap: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; min-width: 0; }
+.tabs { display: grid; grid-template-columns: repeat(3, 1fr); border-bottom: 1px solid var(--line); }
+.tabs button { font-size: 15px; font-weight: 500; background: none; border: 0; border-bottom: 3px solid transparent; padding: 12px 6px 9px; color: var(--muted); cursor: pointer; }
+.tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+.pane { padding: 14px 16px 18px; display: grid; gap: 14px; }
+h2 { font-weight: 600; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; margin: 0; color: var(--muted); }
+.row { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: baseline; }
+.row input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); margin: 4px 0 0; }
+output, .mono { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.inline { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.wrap { display: flex; flex-wrap: wrap; gap: 8px; }
+.check { display: inline-flex; align-items: center; gap: 8px; }
+input[type=color] { width: 44px; height: 32px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; cursor: pointer; }
+input[type=color].big { width: 100%; height: 52px; }
+.chip { display: inline-flex; align-items: center; gap: 7px; border-radius: 999px; padding: 6px 12px 6px 8px; }
+.chip i { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--line); display: block; }
+.chip[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); font-weight: 600; }
+.swatches { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.swatches button { aspect-ratio: 1; min-width: 0; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; padding: 0; }
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.seg button[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); font-weight: 600; }
+.status { min-height: 1.4em; color: var(--muted); font-size: 13px; margin: 0; }
+.small { font-size: 13px; color: var(--muted); margin: 0; }
+.err { padding: 24px; color: var(--muted); }
+/* Model cards (dynamic) and the "new from sketch" dialog. */
+.models { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+@media (max-width: 600px) {
+  .models { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 40%; overflow-x: auto; scroll-snap-type: x proximity; padding-bottom: 4px; }
+  .cardwrap { scroll-snap-align: start; }
+}
+.cardwrap { position: relative; display: grid; min-width: 0; }
+.cardtools { position: absolute; top: 12px; right: 12px; display: flex; gap: 4px; }
+.cardtools button { font-size: 12px; line-height: 1; padding: 5px 7px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer; }
+.cardtools button:hover { border-color: var(--accent); }
+.card.add { border-style: dashed; background: transparent; align-content: start; }
+.card.add .thumb { display: grid; place-items: center; background: transparent; border: 1px dashed var(--line); font-size: 34px; color: var(--muted); }
+.card.add:hover .thumb { border-color: var(--accent); color: var(--accent); }
+.dropping .card.add { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+dialog { border: 1px solid var(--line); border-radius: 12px; padding: 0; background: var(--surface); color: var(--fg); width: min(980px, calc(100vw - 24px)); max-height: calc(100vh - 24px); }
+dialog::backdrop { background: rgba(10, 12, 20, 0.45); }
+.dlg-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.dlg-h h2 { font-size: 16px; text-transform: none; letter-spacing: 0; color: var(--fg); }
+.dlg-body { display: grid; gap: 16px; padding: 16px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 760px) { .dlg-body { grid-template-columns: minmax(0, 1fr) 330px; } }
+.preview { display: grid; gap: 8px; align-content: start; min-width: 0; }
+.preview canvas { width: 100%; height: auto; background: var(--stage); border: 1px solid var(--line); border-radius: 8px; cursor: default; touch-action: auto; }
+.dlg-ctrl { display: grid; gap: 12px; align-content: start; min-width: 0; }
+.field { display: grid; gap: 4px; }
+.field input[type=text], .field input[type=password], .field textarea, .field select { width: 100%; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; }
+.field textarea { min-height: 72px; resize: vertical; }
+.legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+</style>
+
+</head>
+<body>
+<main class="app">
+  <nav class="models" id="models" aria-label="Models"></nav>
+  <input type="file" id="file" accept="image/*" hidden>
+
+  <header>
+    <h1 id="title">Figure</h1>
+    <p id="note"></p>
+  </header>
+
+  <div class="layout">
+    <div>
+      <div class="stage" id="stage">
+        <canvas id="gl" aria-label="3D model. Drag to rotate, scroll or pinch to zoom, tap a part to select its colour."></canvas>
+        <div id="dimlabels" aria-hidden="true"></div>
+        <button class="btn overlay tr" id="reset" type="button">Reset view</button>
+        <div class="overlay tl">
+          <label class="spin"><input type="checkbox" id="dimsToggle"> Dimensions</label>
+          <label class="spin"><input type="checkbox" id="spin"> Turntable</label>
+        </div>
+      </div>
+      <p class="hint">Drag to turn · scroll or pinch to zoom · tap a part to recolour it · drop a sketch photo anywhere to add a model</p>
+    </div>
+
+    <section class="panel" aria-label="Controls">
+      <div class="tabs" role="tablist">
+        <button role="tab" id="t-light" aria-controls="p-light" aria-selected="true" data-tab="light" type="button">Light</button>
+        <button role="tab" id="t-colour" aria-controls="p-colour" aria-selected="false" data-tab="colour" type="button">Colour</button>
+        <button role="tab" id="t-export" aria-controls="p-export" aria-selected="false" data-tab="export" type="button">Export</button>
+      </div>
+
+      <div class="pane" id="p-light" role="tabpanel" aria-labelledby="t-light">
+        <div>
+          <h2>Setups</h2>
+          <div class="wrap" style="margin-top:8px">
+            <button class="btn" data-preset="studio" type="button">Studio</button>
+            <button class="btn" data-preset="sunset" type="button">Sunset</button>
+            <button class="btn" data-preset="moody" type="button">Moody</button>
+            <button class="btn" data-preset="flat" type="button">Flat</button>
+          </div>
+        </div>
+        <h2>Main light</h2>
+        <div class="row"><label for="az">Direction</label><output id="az-o"></output><input type="range" id="az" min="0" max="360" step="1"></div>
+        <div class="row"><label for="el">Height</label><output id="el-o"></output><input type="range" id="el" min="5" max="85" step="1"></div>
+        <div class="row"><label for="key">Strength</label><output id="key-o"></output><input type="range" id="key" min="0" max="3" step="0.05"></div>
+        <div class="inline"><label for="keyColor">Light colour</label><input type="color" id="keyColor"></div>
+        <h2>Surroundings</h2>
+        <div class="row"><label for="fill">Soft fill</label><output id="fill-o"></output><input type="range" id="fill" min="0" max="1.5" step="0.05"></div>
+        <div class="row"><label for="rim">Back light</label><output id="rim-o"></output><input type="range" id="rim" min="0" max="2" step="0.05"></div>
+        <label class="check"><input type="checkbox" id="shadows"> Cast shadows</label>
+        <label class="check"><input type="checkbox" id="marker"> Show light position</label>
+      </div>
+
+      <div class="pane" id="p-colour" role="tabpanel" aria-labelledby="t-colour" hidden>
+        <div>
+          <h2>Part</h2>
+          <div class="wrap" id="chips" style="margin-top:8px"></div>
+        </div>
+        <div>
+          <div class="inline" style="margin-bottom:8px"><label for="picker">Colour</label><span class="mono" id="hex"></span></div>
+          <input type="color" class="big" id="picker">
+        </div>
+        <div class="swatches" id="swatches"></div>
+        <div class="row"><label for="rough">Finish</label><output id="rough-o"></output><input type="range" id="rough" min="0.1" max="1" step="0.02"></div>
+        <p class="small">Finish runs from glossy to matte. Metal parts keep their own finish.</p>
+        <button class="btn" id="resetColours" type="button">Reset colours</button>
+      </div>
+
+      <div class="pane" id="p-export" role="tabpanel" aria-labelledby="t-export" hidden>
+        <div>
+          <h2>JPEG size</h2>
+          <div class="seg" style="margin-top:8px">
+            <button class="btn" data-size="1080" aria-pressed="true" type="button">1080 px wide</button>
+            <button class="btn" data-size="2048" aria-pressed="false" type="button">2048 px wide</button>
+          </div>
+        </div>
+        <button class="btn primary" id="saveJpg" type="button">Save JPEG</button>
+        <button class="btn primary" id="saveObj" type="button">Save OBJ + colours (.zip)</button>
+        <button class="btn" id="saveObjOnly" type="button">Save OBJ only</button>
+        <p class="small">Exports the model currently shown. The JPEG includes dimension labels when they are switched on. The .zip holds the .obj and its .mtl file, which carries your colours. Millimetres, Y up, each part is its own named object.</p>
+        <p class="status" id="status" role="status" aria-live="polite"></p>
+      </div>
+    </section>
+  </div>
+</main>
+
+<dialog id="dlg" aria-labelledby="dlgTitle">
+  <div class="dlg-h">
+    <h2 id="dlgTitle">New model from sketch</h2>
+    <button class="btn" type="button" id="dlgClose">Close</button>
+  </div>
+  <div class="dlg-body">
+    <div class="preview">
+      <canvas id="pv" width="640" height="480" aria-label="Sketch preview"></canvas>
+      <div class="legend" id="pvLegend"><span><i style="background:rgba(43,69,201,.55)"></i>Becomes the solid</span><span><i style="background:#d8553f"></i>Inner lines (engraved)</span></div>
+      <p class="small" id="pvNote"></p>
+      <button class="btn" type="button" id="dlgOtherPhoto">Use a different photo</button>
+    </div>
+    <div class="dlg-ctrl">
+      <div class="field"><label for="nName">Name</label><input type="text" id="nName" maxlength="60"></div>
+      <div>
+        <h2>How to build it</h2>
+        <div class="seg" style="margin-top:8px">
+          <button class="btn" type="button" data-method="trace" aria-pressed="true">Trace outline</button>
+          <button class="btn" type="button" data-method="ai" aria-pressed="false">Claude AI</button>
+        </div>
+      </div>
+
+      <div id="opt-trace" class="dlg-ctrl">
+        <p class="small">Works offline. Finds the closed outline of your drawing and puffs it into a solid, like a cookie or a cushion. Best for one clear shape drawn with a dark pen.</p>
+        <div class="row"><label for="tSens">Ink sensitivity</label><output id="tSens-o"></output><input type="range" id="tSens" min="0.04" max="0.4" step="0.01"></div>
+        <div class="row"><label for="tGap">Close gaps in lines</label><output id="tGap-o"></output><input type="range" id="tGap" min="0" max="5" step="1"></div>
+        <div class="row"><label for="tCrop">Trim photo edges</label><output id="tCrop-o"></output><input type="range" id="tCrop" min="0" max="25" step="1"></div>
+        <label class="check"><input type="checkbox" id="tEdge"> Ignore marks touching the photo edge</label>
+        <label class="check"><input type="checkbox" id="tHoles"> Cut out enclosed areas as holes</label>
+        <div class="row"><label for="tSize">Longest side</label><output id="tSize-o"></output><input type="range" id="tSize" min="10" max="2000" step="5"></div>
+        <div class="row"><label for="tThick">Thickness</label><output id="tThick-o"></output><input type="range" id="tThick" min="1" max="400" step="1"></div>
+        <div class="row"><label for="tRound">Roundness</label><output id="tRound-o"></output><input type="range" id="tRound" min="0.03" max="1" step="0.01"></div>
+        <div class="row"><label for="tEngrave">Engrave inner lines</label><output id="tEngrave-o"></output><input type="range" id="tEngrave" min="0" max="20" step="0.5"></div>
+        <div class="row"><label for="tSmooth">Smooth outline</label><output id="tSmooth-o"></output><input type="range" id="tSmooth" min="0" max="8" step="1"></div>
+        <div class="field"><label for="tDetail">Detail</label>
+          <select id="tDetail"><option value="110">Low (fast)</option><option value="170">Medium</option><option value="240">High</option></select>
+        </div>
+      </div>
+
+      <div id="opt-ai" class="dlg-ctrl" hidden>
+        <p class="small">Sends the photo to Claude, which reads the drawing (and any dimensions written on it) and builds the model from simple parts: boxes, spheres, cylinders, cones and rings. Uses your own Anthropic API key and costs a few cents per sketch.</p>
+        <div class="field"><label for="aNotes">Notes for Claude (optional)</label><textarea id="aNotes" placeholder="e.g. Oak bench, 1.2 m long. Legs are 45 mm square."></textarea></div>
+        <div class="field"><label for="aModel">Model</label>
+          <select id="aModel"><option value="claude-opus-5-5">Claude Opus 5.5 (best)</option><option value="claude-sonnet-5-5">Claude Sonnet 5.5 (faster, cheaper)</option></select>
+        </div>
+        <div class="field"><label for="aKey">Anthropic API key</label><input type="password" id="aKey" autocomplete="off" spellcheck="false" placeholder="sk-ant-…"></div>
+        <label class="check"><input type="checkbox" id="aRemember"> Remember the key in this browser</label>
+        <p class="small">The key goes only from your browser to api.anthropic.com. Get one at console.anthropic.com.</p>
+      </div>
+
+      <p class="status" id="dlgStatus" role="status" aria-live="polite"></p>
+      <div class="wrap">
+        <button class="btn primary" type="button" id="dlgCreate">Create model</button>
+        <button class="btn" type="button" id="dlgStop" hidden>Stop</button>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/*CORE-START*/
+const FIG_GROUPS = [
+  { id: 'body',   label: 'Body',   color: '#E8A33D' },
+  { id: 'head',   label: 'Head',   color: '#F2C57C' },
+  { id: 'arms',   label: 'Arms',   color: '#D9822B' },
+  { id: 'legs',   label: 'Legs',   color: '#D9822B' },
+  { id: 'eyes',   label: 'Eyes',   color: '#FFFFFF' },
+  { id: 'pupils', label: 'Pupils', color: '#1F2430' },
+  { id: 'nose',   label: 'Nose',   color: '#D8553F' },
+  { id: 'mouth',  label: 'Mouth',  color: '#3B2A2A' }
+];
+const TABLE_GROUPS = [
+  { id: 'top',    label: 'Table top', color: '#B98B5A' },
+  { id: 'legs',   label: 'Legs',      color: '#A97C50' },
+  { id: 'joints', label: 'Joints',    color: '#74502F' },
+  { id: 'rod',    label: 'Metal rod', color: '#8D95A3', rough: 0.35, metal: 0.85, fixed: true }
+];
+
+function makeMats(groups) {
+  const mats = {};
+  groups.forEach(g => {
+    mats[g.id] = new THREE.MeshStandardMaterial({ color: g.color, roughness: g.rough === undefined ? 0.55 : g.rough, metalness: g.metal === undefined ? 0 : g.metal });
+  });
+  return mats;
+}
+
+function surfZ(c, r, x, y) {
+  const a = (x - c[0]) / r[0], b = (y - c[1]) / r[1];
+  return c[2] + r[2] * Math.sqrt(Math.max(0, 1 - a * a - b * b));
+}
+
+// Sits the model on the floor and reports its bounding box (min, max, size) in mm.
+function finishModel(model, meshes) {
+  model.updateMatrixWorld(true);
+  const b = new THREE.Box3().setFromObject(model);
+  model.position.y = -b.min.y;
+  model.updateMatrixWorld(true);
+  const b2 = new THREE.Box3().setFromObject(model);
+  const s = b2.getSize(new THREE.Vector3());
+  return {
+    model, meshes,
+    min: { x: b2.min.x, y: b2.min.y, z: b2.min.z },
+    max: { x: b2.max.x, y: b2.max.y, z: b2.max.z },
+    size: { x: s.x, y: s.y, z: s.z }
+  };
+}
+
+// Proportions traced from the figure sketch: 1 unit = 1 mm, about 100 mm tall.
+function buildFigure(mats) {
+  const model = new THREE.Group();
+  const meshes = [];
+  function part(name, group, c, r, rotZ, taper) {
+    const g = new THREE.SphereGeometry(1, 48, 32);
+    if (taper) {
+      const p = g.attributes.position;
+      for (let i = 0; i < p.count; i++) {
+        const k = 1 + taper * (-p.getY(i));
+        p.setX(i, p.getX(i) * k);
+        p.setZ(i, p.getZ(i) * k);
+      }
+    }
+    const m = new THREE.Mesh(g, mats[group]);
+    m.name = name;
+    m.userData.group = group;
+    m.position.set(c[0], c[1], c[2]);
+    m.scale.set(r[0], r[1], r[2]);
+    m.rotation.z = rotZ || 0;
+    m.castShadow = true;
+    m.receiveShadow = true;
+    model.add(m);
+    meshes.push(m);
+    return m;
+  }
+
+  part('Body', 'body', [0, 47.3, 0], [22.5, 28, 20], 0, 0.1);
+
+  const head = { c: [3, 87.5, 1], r: [15.5, 13, 14] };
+  const hz = (x, y) => surfZ(head.c, head.r, x, y);
+  part('Head', 'head', head.c, head.r);
+
+  [['L', 0.2, 90.5], ['R', 8.6, 92]].forEach(e => {
+    const z = hz(e[1], e[2]) + 0.8;
+    part('Eye_' + e[0], 'eyes', [e[1], e[2], z], [3.4, 3.6, 3.4]);
+    part('Pupil_' + e[0], 'pupils', [e[1] + 0.3, e[2] - 0.1, z + 2.5], [1.7, 1.8, 1.7]);
+  });
+  part('Nose', 'nose', [9.5, 86.8, hz(9.5, 86.8) + 1.2], [3.2, 3, 3.2]);
+  part('Mouth', 'mouth', [3.9, 79.3, hz(3.9, 79.3) + 0.2], [2.8, 2.1, 1.6]);
+
+  part('Arm_L', 'arms', [-21.7, 57.3, 1.5], [7, 5.8, 5], 0.25);
+  part('Hand_L', 'arms', [-32.9, 57.7, 1.5], [4, 3.6, 3.4]);
+  part('Arm_R', 'arms', [22.7, 64.2, 1.5], [5.5, 6.8, 5], -0.35);
+  part('Hand_R', 'arms', [30, 68.8, 1.5], [2.9, 2.9, 2.9]);
+
+  part('Leg_L', 'legs', [-9.6, 15.3, 2], [8.6, 8.2, 8], 0.2);
+  part('Foot_L', 'legs', [-15.4, 5.2, 3], [4.2, 3, 3.6]);
+  part('Leg_R', 'legs', [16.1, 18.8, 2], [7.4, 7.6, 7.2], -0.25);
+  part('Foot_R', 'legs', [18.6, 11, 3], [3, 2.6, 3]);
+
+  return finishModel(model, meshes);
+}
+
+// Timber table from the second sketch: 2000 long, 900 deep, about 750 high (height is assumed, the sketch gives none).
+// Slab top 60 thick, four splayed plank legs, through-tenon joints on the top, one steel rod through each pair of legs.
+function buildTable(mats) {
+  const model = new THREE.Group();
+  const meshes = [];
+  function add(mesh, name, group, c, rx) {
+    mesh.name = name;
+    mesh.userData.group = group;
+    mesh.position.set(c[0], c[1], c[2]);
+    mesh.rotation.x = rx || 0;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    model.add(mesh);
+    meshes.push(mesh);
+  }
+  const box = (name, group, c, s, rx) => add(new THREE.Mesh(new THREE.BoxGeometry(s[0], s[1], s[2]), mats[group]), name, group, c, rx);
+
+  const LEN = 2000, DEP = 900, TOP = 60, under = 683, th = 7 * Math.PI / 180;
+  const legLen = under / Math.cos(th);
+  box('Table_top', 'top', [0, under + TOP / 2, 0], [LEN, TOP, DEP]);
+
+  [-1, 1].forEach(sx => {
+    [-1, 1].forEach(sz => {
+      const tag = (sx < 0 ? 'L' : 'R') + (sz < 0 ? 'B' : 'F');
+      const x = sx * 780, topZ = sz * 290;
+      const cz = topZ + sz * (legLen * Math.sin(th)) / 2;
+      box('Leg_' + tag, 'legs', [x, under / 2, cz], [110, legLen, 70], -sz * th);
+      box('Joint_' + tag, 'joints', [x, under + TOP + 1.5, topZ], [100, 3, 50]);
+    });
+    add(new THREE.Mesh(new THREE.CylinderGeometry(11, 11, 860, 32, 1), mats.rod), 'Rod_' + (sx < 0 ? 'L' : 'R'), 'rod', [sx * 780, 260, 0], Math.PI / 2);
+  });
+
+  return finishModel(model, meshes);
+}
+
+function fmt(n) { return n.toFixed(4); }
+
+function buildOBJ(meshes, base) {
+  const lines = ['# Sketch model. Units: mm, Y up.', 'mtllib ' + base + '.mtl'];
+  let vOff = 0, vtOff = 0, vnOff = 0;
+  const nm = new THREE.Matrix3();
+  const v = new THREE.Vector3();
+  meshes.forEach(mesh => {
+    const g = mesh.geometry, pos = g.attributes.position, nor = g.attributes.normal, uv = g.attributes.uv, idx = g.index;
+    nm.getNormalMatrix(mesh.matrixWorld);
+    lines.push('o ' + mesh.name, 'usemtl ' + mesh.userData.group);
+    const map = new Map();
+    const weld = new Int32Array(pos.count);
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
+      const key = Math.round(v.x * 1e4) + ',' + Math.round(v.y * 1e4) + ',' + Math.round(v.z * 1e4);
+      let id = map.get(key);
+      if (id === undefined) {
+        id = map.size;
+        map.set(key, id);
+        lines.push('v ' + fmt(v.x) + ' ' + fmt(v.y) + ' ' + fmt(v.z));
+      }
+      weld[i] = id;
+    }
+    for (let i = 0; i < uv.count; i++) lines.push('vt ' + fmt(uv.getX(i)) + ' ' + fmt(uv.getY(i)));
+    for (let i = 0; i < nor.count; i++) {
+      v.fromBufferAttribute(nor, i).applyMatrix3(nm).normalize();
+      lines.push('vn ' + fmt(v.x) + ' ' + fmt(v.y) + ' ' + fmt(v.z));
+    }
+    for (let i = 0; i < idx.count; i += 3) {
+      const a = idx.getX(i), b = idx.getX(i + 1), c = idx.getX(i + 2);
+      const wa = weld[a], wb = weld[b], wc = weld[c];
+      if (wa === wb || wb === wc || wa === wc) continue;
+      const f = q => (vOff + weld[q] + 1) + '/' + (vtOff + q + 1) + '/' + (vnOff + q + 1);
+      lines.push('f ' + f(a) + ' ' + f(b) + ' ' + f(c));
+    }
+    vOff += map.size; vtOff += uv.count; vnOff += nor.count;
+  });
+  return lines.join('\n') + '\n';
+}
+
+function buildMTL(groups, mats) {
+  const out = ['# Colours from Sketch to Asset'];
+  groups.forEach(g => {
+    const m = mats[g.id], gloss = 1 - m.roughness, ks = Math.min(1, gloss * 0.5 + m.metalness * 0.4);
+    out.push('newmtl ' + g.id,
+      'Ka 0.2000 0.2000 0.2000',
+      'Kd ' + fmt(m.color.r) + ' ' + fmt(m.color.g) + ' ' + fmt(m.color.b),
+      'Ks ' + fmt(ks) + ' ' + fmt(ks) + ' ' + fmt(ks),
+      'Ns ' + (gloss * 120).toFixed(1),
+      'd 1.0', 'illum 2', '');
+  });
+  return out.join('\n');
+}
+
+/* ---------- Sketch to 3D, mode 1: trace the outline (offline) ---------- */
+
+// Morphological max over a square of radius k. `edge` is the value assumed outside the grid.
+function dilateGrid(src, w, h, k, edge) {
+  if (k <= 0) return src.slice();
+  const tmp = new Uint8Array(w * h), out = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let v = 0;
+    for (let d = -k; d <= k && !v; d++) { const xx = x + d; v = (xx < 0 || xx >= w) ? edge : src[y * w + xx]; }
+    tmp[y * w + x] = v;
+  }
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let v = 0;
+    for (let d = -k; d <= k && !v; d++) { const yy = y + d; v = (yy < 0 || yy >= h) ? edge : tmp[yy * w + x]; }
+    out[y * w + x] = v;
+  }
+  return out;
+}
+
+// img: { w, h, data: RGBA bytes } at twice the grid resolution.
+// p: { sens 0..1, gap cells, dropEdge bool }
+// Returns the solid mask, inner line cells and a distance field, all on a grid of (w/2) x (h/2) cells.
+function traceSketch(img, p) {
+  const W = img.w, H = img.h, d = img.data;
+  const gw = Math.ceil(W / 2), gh = Math.ceil(H / 2), N = gw * gh;
+  const g = new Float32Array(W * H);
+  for (let i = 0; i < W * H; i++) g[i] = 0.299 * d[4 * i] + 0.587 * d[4 * i + 1] + 0.114 * d[4 * i + 2];
+  // Adaptive threshold against the local mean copes with uneven light on a photographed page.
+  const SW = W + 1, S = new Float64Array(SW * (H + 1));
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) S[(y + 1) * SW + x + 1] = g[y * W + x] + S[y * SW + x + 1] + S[(y + 1) * SW + x] - S[y * SW + x];
+  const r = Math.max(4, Math.round(Math.max(W, H) / 14));
+  const ink = new Uint8Array(N), inkCount = new Uint16Array(N);
+  for (let y = 0; y < H; y++) {
+    const y0 = Math.max(0, y - r), y1 = Math.min(H, y + r + 1);
+    for (let x = 0; x < W; x++) {
+      const x0 = Math.max(0, x - r), x1 = Math.min(W, x + r + 1);
+      const mean = (S[y1 * SW + x1] - S[y0 * SW + x1] - S[y1 * SW + x0] + S[y0 * SW + x0]) / ((x1 - x0) * (y1 - y0));
+      const v = g[y * W + x];
+      if (v < mean * (1 - p.sens) && mean - v > 10) inkCount[(y >> 1) * gw + (x >> 1)]++;
+    }
+  }
+  for (let i = 0; i < N; i++) ink[i] = inkCount[i] > 0 ? 1 : 0;
+
+  // Close gaps, then flood the background in from the border. Whatever the flood cannot reach is the solid.
+  const k = p.gap | 0;
+  const inkD = dilateGrid(ink, gw, gh, k, 0);
+  const bg = new Uint8Array(N), q = new Int32Array(N);
+  let qh = 0, qt = 0;
+  const seed = i => { if (!inkD[i] && !bg[i]) { bg[i] = 1; q[qt++] = i; } };
+  for (let x = 0; x < gw; x++) { seed(x); seed((gh - 1) * gw + x); }
+  for (let y = 0; y < gh; y++) { seed(y * gw); seed(y * gw + gw - 1); }
+  while (qh < qt) {
+    const i = q[qh++], x = i % gw, y = (i / gw) | 0;
+    if (x > 0) seed(i - 1); if (x < gw - 1) seed(i + 1); if (y > 0) seed(i - gw); if (y < gh - 1) seed(i + gw);
+  }
+  let mask = new Uint8Array(N);
+  for (let i = 0; i < N; i++) mask[i] = bg[i] ? 0 : 1;
+
+  // Undo the gap closing on the outside (closing = dilate then erode).
+  if (k > 0) {
+    const inv = new Uint8Array(N);
+    for (let i = 0; i < N; i++) inv[i] = mask[i] ? 0 : 1;
+    const grown = dilateGrid(inv, gw, gh, k, 0);
+    for (let i = 0; i < N; i++) mask[i] = grown[i] ? 0 : 1;
+  }
+
+  // Connected parts: drop specks, and (optionally) anything touching the photo edge such as the table or page border.
+  const lab = new Int32Array(N).fill(-1), comps = [];
+  for (let s = 0; s < N; s++) {
+    if (!mask[s] || lab[s] >= 0) continue;
+    const id = comps.length; let n = 0, edge = false; qh = 0; qt = 0; q[qt++] = s; lab[s] = id;
+    while (qh < qt) {
+      const i = q[qh++], x = i % gw, y = (i / gw) | 0; n++;
+      if (x === 0 || y === 0 || x === gw - 1 || y === gh - 1) edge = true;
+      const nb = [x > 0 ? i - 1 : -1, x < gw - 1 ? i + 1 : -1, y > 0 ? i - gw : -1, y < gh - 1 ? i + gw : -1];
+      for (const j of nb) if (j >= 0 && mask[j] && lab[j] < 0) { lab[j] = id; q[qt++] = j; }
+    }
+    comps.push({ n, edge });
+  }
+  let biggest = 0;
+  comps.forEach(c => { if (!(p.dropEdge && c.edge)) biggest = Math.max(biggest, c.n); });
+  const keep = comps.map(c => !(p.dropEdge && c.edge) && c.n >= Math.max(6, biggest * 0.02));
+  let cells = 0, parts = 0, bx0 = gw, by0 = gh, bx1 = -1, by1 = -1;
+  keep.forEach(v => { if (v) parts++; });
+  for (let i = 0; i < N; i++) {
+    if (mask[i] && keep[lab[i]]) {
+      cells++;
+      const x = i % gw, y = (i / gw) | 0;
+      if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; if (y < by0) by0 = y; if (y > by1) by1 = y;
+    } else mask[i] = 0;
+  }
+
+  // Optional holes: inside each shape, every area fenced off by ink except the largest one is cut right through
+  // (a ring's middle, a handle opening). Grown back by the gap size so the hole reaches the drawn line.
+  if (p.holes) {
+    const reg = new Int32Array(N).fill(-1), rs = [];
+    for (let s = 0; s < N; s++) {
+      if (!mask[s] || inkD[s] || reg[s] >= 0) continue;
+      const id = rs.length; let n = 0; qh = 0; qt = 0; q[qt++] = s; reg[s] = id;
+      while (qh < qt) {
+        const i = q[qh++], x = i % gw, y = (i / gw) | 0; n++;
+        const nb = [x > 0 ? i - 1 : -1, x < gw - 1 ? i + 1 : -1, y > 0 ? i - gw : -1, y < gh - 1 ? i + gw : -1];
+        for (const j of nb) if (j >= 0 && mask[j] && !inkD[j] && reg[j] < 0) { reg[j] = id; q[qt++] = j; }
+      }
+      rs.push({ n, parent: lab[s] });
+    }
+    const best = {};
+    rs.forEach((r, id) => { if (best[r.parent] === undefined || r.n > rs[best[r.parent]].n) best[r.parent] = id; });
+    const hole = new Uint8Array(N);
+    for (let i = 0; i < N; i++) if (reg[i] >= 0 && best[rs[reg[i]].parent] !== reg[i] && rs[reg[i]].n >= 4) hole[i] = 1;
+    const grownHole = dilateGrid(hole, gw, gh, k, 0);
+    for (let i = 0; i < N; i++) if (grownHole[i] && mask[i]) { mask[i] = 0; cells--; }
+  }
+
+  // Chamfer distance from each solid cell to the outside.
+  const dist = new Float32Array(N), BIG = 1e9, R2 = Math.SQRT2;
+  for (let i = 0; i < N; i++) dist[i] = mask[i] ? BIG : 0;
+  const at = (x, y) => (x < 0 || y < 0 || x >= gw || y >= gh) ? 0 : dist[y * gw + x];
+  for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
+    const i = y * gw + x; if (!mask[i]) continue;
+    dist[i] = Math.min(dist[i], at(x - 1, y) + 1, at(x, y - 1) + 1, at(x - 1, y - 1) + R2, at(x + 1, y - 1) + R2);
+  }
+  for (let y = gh - 1; y >= 0; y--) for (let x = gw - 1; x >= 0; x--) {
+    const i = y * gw + x; if (!mask[i]) continue;
+    dist[i] = Math.min(dist[i], at(x + 1, y) + 1, at(x, y + 1) + 1, at(x + 1, y + 1) + R2, at(x - 1, y + 1) + R2);
+  }
+
+  // Ink inside the solid (eyes, seams, details) away from the rim gets engraved.
+  const inner = new Uint8Array(N);
+  for (let i = 0; i < N; i++) inner[i] = (ink[i] && mask[i] && dist[i] > 2.5) ? 1 : 0;
+
+  // Colour of the drawing, if it was coloured in (white paper gives null).
+  let cr = 0, cg = 0, cb = 0, cn = 0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const ci = (y >> 1) * gw + (x >> 1);
+    if (!mask[ci] || ink[ci]) continue;
+    const pi = 4 * (y * W + x); cr += d[pi]; cg += d[pi + 1]; cb += d[pi + 2]; cn++;
+  }
+  let colour = null;
+  if (cn > 20) {
+    cr /= cn; cg /= cn; cb /= cn;
+    const mx = Math.max(cr, cg, cb), mn = Math.min(cr, cg, cb);
+    if (mx > 40 && (mx - mn) / mx > 0.18) colour = '#' + [cr, cg, cb].map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
+  }
+
+  return { gw, gh, mask, ink, inner, dist, cells, parts, colour, bbox: cells ? { x0: bx0, y0: by0, x1: bx1, y1: by1 } : null };
+}
+
+// Builds a closed, puffed solid from a traced mask. The sketch is the front view (X right, Y up); thickness runs along Z.
+// p: { size mm (longest side), thick mm, round 0..1, engrave mm, smooth iterations }
+function buildTraced(mats, tr, p) {
+  const { gw, gh, mask, inner, dist, bbox } = tr;
+  const VW = gw + 1, VH = gh + 1, NV = VW * VH;
+  const cellIn = (x, y) => x >= 0 && y >= 0 && x < gw && y < gh && mask[y * gw + x] === 1;
+  const vin = new Uint8Array(NV), vbd = new Uint8Array(NV);
+  for (let j = 0; j < VH; j++) for (let i = 0; i < VW; i++) {
+    const a = cellIn(i - 1, j - 1), b = cellIn(i, j - 1), c = cellIn(i - 1, j), e = cellIn(i, j);
+    if (a || b || c || e) { vin[j * VW + i] = 1; if (!(a && b && c && e)) vbd[j * VW + i] = 1; }
+  }
+
+  // Smooth the stair-stepped outline: rim vertices follow the rim, inner vertices relax towards their neighbours.
+  let px = new Float32Array(NV), py = new Float32Array(NV);
+  for (let j = 0; j < VH; j++) for (let i = 0; i < VW; i++) { px[j * VW + i] = i; py[j * VW + i] = j; }
+  const iters = p.smooth | 0;
+  for (let it = 0; it < iters; it++) {
+    const nx = px.slice(), ny = py.slice();
+    for (let j = 0; j < VH; j++) for (let i = 0; i < VW; i++) {
+      const v = j * VW + i; if (!vin[v]) continue;
+      let sx = 0, sy = 0, n = 0;
+      const add = u => { sx += px[u]; sy += py[u]; n++; };
+      if (vbd[v]) {
+        if (i < VW - 1 && cellIn(i, j - 1) !== cellIn(i, j)) add(v + 1);
+        if (i > 0 && cellIn(i - 1, j - 1) !== cellIn(i - 1, j)) add(v - 1);
+        if (j < VH - 1 && cellIn(i - 1, j) !== cellIn(i, j)) add(v + VW);
+        if (j > 0 && cellIn(i - 1, j - 1) !== cellIn(i, j - 1)) add(v - VW);
+      } else { add(v - 1); add(v + 1); add(v - VW); add(v + VW); }
+      if (n) { nx[v] = px[v] + 0.5 * (sx / n - px[v]); ny[v] = py[v] + 0.5 * (sy / n - py[v]); }
+    }
+    px = nx; py = ny;
+  }
+
+  // Height profile: a quarter circle from the rim inwards, flat on top once it reaches full thickness.
+  const vd = new Float32Array(NV), eng = new Uint8Array(NV);
+  let dmax = 0;
+  for (let j = 0; j < VH; j++) for (let i = 0; i < VW; i++) {
+    const v = j * VW + i; if (!vin[v]) continue;
+    const cs = [[i - 1, j - 1], [i, j - 1], [i - 1, j], [i, j]];
+    cs.forEach(c => { if (cellIn(c[0], c[1]) && inner[c[1] * gw + c[0]]) eng[v] = 1; });
+    if (vbd[v]) continue;
+    let s = 0; cs.forEach(c => { s += dist[c[1] * gw + c[0]]; });
+    vd[v] = Math.max(0, s / 4 - 0.5);
+    if (vd[v] > dmax) dmax = vd[v];
+  }
+  const half = p.thick / 2, R = Math.max(0.5, p.round * dmax);
+  const bw = bbox.x1 - bbox.x0 + 1, bh = bbox.y1 - bbox.y0 + 1;
+  const sc = p.size / Math.max(bw, bh);
+  const cx = bbox.x0 + bw / 2, cy = bbox.y0 + bh / 2;
+
+  // Front and back never share a vertex: a thin wall runs round the rim, so the mesh is closed and manifold
+  // even where the outline narrows to a single cell (slicers need that).
+  const hr = Math.min(half, Math.max(0.1, half * 0.08));
+  const pos = [], uv = [], fIdx = new Int32Array(NV).fill(-1), bIdx = new Int32Array(NV).fill(-1);
+  let n = 0;
+  for (let v = 0; v < NV; v++) {
+    if (!vin[v]) continue;
+    const X = (px[v] - cx) * sc, Y = -(py[v] - cy) * sc;
+    const t = vbd[v] ? 0 : Math.min(1, vd[v] / R), h = hr + (half - hr) * Math.sqrt(1 - (1 - t) * (1 - t));
+    const hf = eng[v] ? Math.max(h * 0.25, h - p.engrave) : h;
+    pos.push(X, Y, hf); uv.push(px[v] / gw, 1 - py[v] / gh); fIdx[v] = n++;
+    pos.push(X, Y, -h); uv.push(px[v] / gw, 1 - py[v] / gh); bIdx[v] = n++;
+  }
+  const idx = [];
+  for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
+    if (!mask[j * gw + i]) continue;
+    const v00 = j * VW + i, v10 = v00 + 1, v01 = v00 + VW, v11 = v01 + 1;
+    idx.push(fIdx[v00], fIdx[v01], fIdx[v11], fIdx[v00], fIdx[v11], fIdx[v10]);
+    idx.push(bIdx[v00], bIdx[v11], bIdx[v01], bIdx[v00], bIdx[v10], bIdx[v11]);
+  }
+  // Rim wall: one quad per cell edge that separates solid from outside, wound to face outwards.
+  const wall = (a, b, out) => {
+    if (out) idx.push(fIdx[a], fIdx[b], bIdx[b], fIdx[a], bIdx[b], bIdx[a]);
+    else idx.push(fIdx[a], bIdx[b], fIdx[b], fIdx[a], bIdx[a], bIdx[b]);
+  };
+  for (let j = 0; j < VH; j++) for (let i = 0; i < gw; i++) {
+    const up = cellIn(i, j - 1), dn = cellIn(i, j);
+    if (up !== dn) wall(j * VW + i, j * VW + i + 1, dn);
+  }
+  for (let j = 0; j < gh; j++) for (let i = 0; i < VW; i++) {
+    const lf = cellIn(i - 1, j), rt = cellIn(i, j);
+    if (lf !== rt) wall(j * VW + i, (j + 1) * VW + i, lf);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+
+  const model = new THREE.Group();
+  const mesh = new THREE.Mesh(geo, mats.shape);
+  mesh.name = 'Shape';
+  mesh.userData.group = 'shape';
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  model.add(mesh);
+  return finishModel(model, [mesh]);
+}
+
+/* ---------- Sketch to 3D, mode 2: Claude reads the sketch and returns parts ---------- */
+
+const SHAPES = ['box', 'sphere', 'cylinder', 'cone', 'torus'];
+const VEC3 = { type: 'object', additionalProperties: false, required: ['x', 'y', 'z'], properties: { x: { type: 'number' }, y: { type: 'number' }, z: { type: 'number' } } };
+const SPEC_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['name', 'summary', 'assumptions', 'groups', 'parts'],
+  properties: {
+    name: { type: 'string', description: 'Short name for the object, 1 to 4 words.' },
+    summary: { type: 'string', description: 'One sentence on what was modelled.' },
+    assumptions: { type: 'array', items: { type: 'string' }, description: 'Sizes or details that were guessed rather than read from the sketch.' },
+    groups: {
+      type: 'array', description: 'Colour/material groups. Parts that should share a colour share a group.',
+      items: {
+        type: 'object', additionalProperties: false, required: ['id', 'label', 'color', 'roughness', 'metalness'],
+        properties: {
+          id: { type: 'string', description: 'lowercase, letters digits and underscores only' },
+          label: { type: 'string' },
+          color: { type: 'string', description: '#RRGGBB' },
+          roughness: { type: 'number', description: '0 glossy to 1 matte' },
+          metalness: { type: 'number', description: '0 or 1 for most materials' }
+        }
+      }
+    },
+    parts: {
+      type: 'array',
+      items: {
+        type: 'object', additionalProperties: false, required: ['name', 'group', 'shape', 'center', 'size', 'rotation'],
+        properties: {
+          name: { type: 'string' },
+          group: { type: 'string', description: 'id of one of the groups' },
+          shape: { type: 'string', enum: SHAPES },
+          center: Object.assign({ description: 'centre of the part in mm' }, VEC3),
+          size: Object.assign({ description: 'box/sphere/cylinder/cone: full extent along each local axis in mm (cylinder and cone axis is local Y, cone tip at +Y). torus: x = outer diameter, y = tube diameter, z ignored; the ring lies in the local XY plane.' }, VEC3),
+          rotation: Object.assign({ description: 'Euler angles in degrees, applied X then Y then Z' }, VEC3)
+        }
+      }
+    }
+  }
+};
+
+const SPEC_SYSTEM = [
+  'You turn photos of hand-drawn sketches into simple 3D models made of primitive parts, for viewing, 3D printing and woodworking.',
+  'Coordinates: millimetres, Y up, X to the right, Z towards the viewer. Treat the main view in the sketch as the front view unless the drawing is clearly in perspective or isometric, in which case reconstruct the real 3D form.',
+  'Use any dimensions written on the sketch exactly. Where none are given, choose realistic real-world sizes for that kind of object and list each guess in assumptions.',
+  'Model the recognisable form with as few parts as give a faithful result (usually 3 to 60, never more than 150). Parts may overlap; overlapping slightly is better than leaving gaps. Keep small details such as eyes, handles or joints when they are drawn.',
+  'Put the lowest point of the object at or near y = 0. Choose pleasant, plausible colours (timber, metal, fabric, or the colours drawn) and give each distinct material its own group.'
+].join(' ');
+
+function cleanId(s, i) { const v = String(s || '').toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 24); return v || 'group' + i; }
+function cleanHex(s, fb) { return /^#[0-9a-f]{6}$/i.test(String(s || '').trim()) ? String(s).trim().toUpperCase() : fb; }
+function num(v, fb) { return typeof v === 'number' && isFinite(v) ? v : fb; }
+
+// Validates and tidies a spec from the model, so a slightly off answer still builds.
+function normalizeSpec(raw) {
+  const spec = raw || {};
+  const groups = [], seen = {};
+  (Array.isArray(spec.groups) ? spec.groups : []).forEach((g, i) => {
+    const id = cleanId(g.id, i);
+    if (seen[id]) return;
+    seen[id] = true;
+    const rough = Math.min(1, Math.max(0.05, num(g.roughness, 0.55))), metal = Math.min(1, Math.max(0, num(g.metalness, 0)));
+    groups.push({ id, label: String(g.label || id).slice(0, 30), color: cleanHex(g.color, '#B98B5A'), rough, metal, fixed: metal > 0.5 });
+  });
+  if (!groups.length) groups.push({ id: 'main', label: 'Main', color: '#B98B5A', rough: 0.55, metal: 0 });
+  const v3 = (o, fb) => ({ x: num(o && o.x, fb), y: num(o && o.y, fb), z: num(o && o.z, fb) });
+  const parts = (Array.isArray(spec.parts) ? spec.parts : []).slice(0, 300).map((p, i) => {
+    const gid = cleanId(p.group, 0);
+    const size = v3(p.size, 10);
+    ['x', 'y', 'z'].forEach(a => { size[a] = Math.max(0.1, Math.abs(size[a])); });
+    return {
+      name: String(p.name || 'Part_' + (i + 1)).replace(/\s+/g, '_').slice(0, 40),
+      group: seen[gid] ? gid : groups[0].id,
+      shape: SHAPES.indexOf(p.shape) >= 0 ? p.shape : 'box',
+      center: v3(p.center, 0), size, rotation: v3(p.rotation, 0)
+    };
+  });
+  const names = {};
+  parts.forEach(p => { let n = p.name, k = 2; while (names[n]) n = p.name + '_' + k++; names[n] = true; p.name = n; });
+  return {
+    name: String(spec.name || 'Sketch model').slice(0, 60),
+    summary: String(spec.summary || ''),
+    assumptions: (Array.isArray(spec.assumptions) ? spec.assumptions : []).map(String).slice(0, 20),
+    groups, parts
+  };
+}
+
+function buildFromSpec(mats, spec) {
+  const model = new THREE.Group();
+  const meshes = [];
+  const D = Math.PI / 180;
+  spec.parts.forEach(p => {
+    let geo;
+    const s = p.size;
+    if (p.shape === 'sphere') geo = new THREE.SphereGeometry(0.5, 40, 28);
+    else if (p.shape === 'cylinder') geo = new THREE.CylinderGeometry(0.5, 0.5, 1, 40, 1);
+    else if (p.shape === 'cone') geo = new THREE.CylinderGeometry(0, 0.5, 1, 40, 1);
+    else if (p.shape === 'torus') {
+      const tube = Math.max(0.1, Math.min(s.y, s.x * 0.9)) / 2;
+      geo = new THREE.TorusGeometry(Math.max(tube * 1.05, s.x / 2 - tube), tube, 20, 56);
+    } else geo = new THREE.BoxGeometry(1, 1, 1);
+    const m = new THREE.Mesh(geo, mats[p.group]);
+    m.name = p.name;
+    m.userData.group = p.group;
+    m.position.set(p.center.x, p.center.y, p.center.z);
+    m.rotation.set(p.rotation.x * D, p.rotation.y * D, p.rotation.z * D, 'XYZ');
+    if (p.shape !== 'torus') m.scale.set(s.x, s.y, s.z);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    model.add(m);
+    meshes.push(m);
+  });
+  return finishModel(model, meshes);
+}
+/*CORE-END*/
+
+(function () {
+  const $ = id => document.getElementById(id);
+  const stage = $('stage'), canvas = $('gl');
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const r1 = v => (v < 100 ? v.toFixed(1) : String(Math.round(v)));
+  const fmtDim = v => r1(v) + ' mm';
+  const slug = s => (String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'sketch-model').slice(0, 40);
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } },
+    del(k) { try { localStorage.removeItem(k); } catch (e) {} }
+  };
+
+  if (typeof THREE === 'undefined') { stage.innerHTML = '<p class="err">The 3D library did not load. Check the internet connection and reload the page.</p>'; return; }
+
+  let renderer;
+  try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true }); }
+  catch (e) { stage.innerHTML = '<p class="err">This browser could not start WebGL, so the 3D view is unavailable.</p>'; return; }
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(35, 1, 1, 1000);
+
+  /* floor, lights, marker (all sized per model in setFrame) */
+  const floorMat = new THREE.MeshStandardMaterial({ color: 0xf3f5f9, roughness: 1 });
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(0.95, 64), floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.receiveShadow = true;
+  scene.add(floor);
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x8a8fa0, 0.45);
+  scene.add(hemi);
+  const key = new THREE.DirectionalLight(0xffffff, 1);
+  key.castShadow = true;
+  key.shadow.mapSize.set(2048, 2048);
+  key.shadow.bias = -0.0006;
+  scene.add(key, key.target);
+  const rim = new THREE.DirectionalLight(0xbcd4ff, 0.5);
+  scene.add(rim, rim.target);
+  const marker = new THREE.Mesh(new THREE.SphereGeometry(3, 20, 14), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  scene.add(marker);
+  const dimMat = new THREE.LineBasicMaterial({ color: 0x1b2030, depthTest: false, transparent: true });
+
+  function buildDims(e) {
+    const s = e.size3, mn = e.min, mx = e.max, off = e.size * 0.07, tk = e.size * 0.02;
+    const P = [], labels = [];
+    const seg = (a, b) => P.push(a[0], a[1], a[2], b[0], b[1], b[2]);
+    function dim(a, b, anchA, anchB, td, text) {
+      seg(a, b); seg(anchA, a); seg(anchB, b);
+      [a, b].forEach(p => seg([p[0] - td[0] * tk, p[1] - td[1] * tk, p[2] - td[2] * tk], [p[0] + td[0] * tk, p[1] + td[1] * tk, p[2] + td[2] * tk]));
+      labels.push({ pos: new THREE.Vector3((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2), text });
+    }
+    const y0 = mn.y;
+    dim([mn.x, y0, mx.z + off], [mx.x, y0, mx.z + off], [mn.x, y0, mx.z], [mx.x, y0, mx.z], [0, 0, 1], e.names[0] + ' ' + fmtDim(s.x));
+    dim([mx.x + off, y0, mn.z], [mx.x + off, y0, mx.z], [mx.x, y0, mn.z], [mx.x, y0, mx.z], [1, 0, 0], e.names[1] + ' ' + fmtDim(s.z));
+    dim([mn.x - off, y0, mx.z], [mn.x - off, mx.y, mx.z], [mn.x, y0, mx.z], [mn.x, mx.y, mx.z], [1, 0, 0], e.names[2] + ' ' + fmtDim(s.y));
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+    const lines = new THREE.LineSegments(geo, dimMat);
+    lines.renderOrder = 999;
+    lines.frustumCulled = false;
+    return { group: lines, labels };
+  }
+
+  /* models: built-in sketches first, then the owner's own (saved in this browser) */
+  const entries = [];
+  function addEntry(def, at) {
+    const mats = makeMats(def.groups);
+    const f = def.build(mats);
+    const e = Object.assign({}, def, f, { mats, colours: {}, rough: 0.55 });
+    e.size3 = f.size;
+    e.size = Math.max(f.size.x, f.size.y, f.size.z, 0.001);
+    e.center = new THREE.Vector3((f.min.x + f.max.x) / 2, f.size.y / 2, (f.min.z + f.max.z) / 2);
+    def.groups.forEach(g => { e.colours[g.id] = g.color.toLowerCase(); });
+    e.model.visible = false;
+    scene.add(e.model);
+    e.dims = buildDims(e);
+    e.dims.group.visible = false;
+    scene.add(e.dims.group);
+    e.selected = def.groups[0].id;
+    if (at === undefined || at < 0) entries.push(e); else entries.splice(at, 0, e);
+    return e;
+  }
+  function disposeEntry(e) {
+    scene.remove(e.model); scene.remove(e.dims.group);
+    e.meshes.forEach(m => m.geometry.dispose());
+    Object.values(e.mats).forEach(m => m.dispose());
+    e.dims.group.geometry.dispose();
+  }
+
+  addEntry({ id: 'figure', label: 'Figure', file: 'sketch-figure', groups: FIG_GROUPS, build: buildFigure, names: ['Width', 'Depth', 'Height'], note: '' });
+  addEntry({ id: 'table', label: 'Timber table', file: 'timber-table', groups: TABLE_GROUPS, build: buildTable, names: ['Length', 'Depth', 'Height'], note: 'Height, top thickness, legs, joints and rod are assumed; only length and depth were on the sketch.' });
+  let cur = entries[0];
+
+  // A saved record is small: trace models keep a downscaled copy of the photo plus their settings; AI models keep the returned parts list.
+  function defFromRecord(rec, tr) {
+    if (rec.method === 'ai') {
+      const spec = rec.spec;
+      const note = [spec.summary].concat(spec.assumptions.length ? ['Assumed: ' + spec.assumptions.join('; ')] : []).join(' ');
+      return { id: rec.id, label: rec.label, file: slug(rec.label), groups: spec.groups, build: m => buildFromSpec(m, spec), names: ['Width', 'Depth', 'Height'], note, user: true, record: rec };
+    }
+    const groups = [{ id: 'shape', label: 'Shape', color: rec.params.colour || '#E8A33D' }];
+    return { id: rec.id, label: rec.label, file: slug(rec.label), groups, build: m => buildTraced(m, tr, rec.params), names: ['Width', 'Thickness', 'Height'], note: 'Traced from your sketch. Change size, thickness and roundness with Adjust.', user: true, record: rec };
+  }
+  const STORE = 'smv-models-v1';
+  function persist() {
+    const recs = entries.filter(e => e.user).map(e => e.record);
+    if (!store.set(STORE, JSON.stringify(recs))) status('Could not save models in this browser (storage full or blocked). They will be gone after a reload.');
+  }
+
+  /* light state */
+  const L = { az: 40, el: 45, key: 1.1, keyColor: '#fff4e5', fill: 0.45, rim: 0.5, shadows: true, marker: true, spin: false, dims: true };
+  const PRESETS = {
+    studio: { az: 40,  el: 45, key: 1.1, keyColor: '#fff4e5', fill: 0.45, rim: 0.5 },
+    sunset: { az: 110, el: 12, key: 1.5, keyColor: '#ffb070', fill: 0.25, rim: 0.6 },
+    moody:  { az: 300, el: 25, key: 1.2, keyColor: '#e8eeff', fill: 0.08, rim: 1.1 },
+    flat:   { az: 0,   el: 60, key: 0.5, keyColor: '#ffffff', fill: 1.1,  rim: 0 }
+  };
+  let need = true;
+  let lastShadows = true;
+
+  function applyLight() {
+    const s = cur.size, c = cur.center;
+    const a = L.az * Math.PI / 180, e = L.el * Math.PI / 180;
+    const dir = new THREE.Vector3(Math.sin(a) * Math.cos(e), Math.sin(e), Math.cos(a) * Math.cos(e));
+    key.position.copy(c).addScaledVector(dir, s * 1.63);
+    key.target.position.copy(c);
+    key.intensity = L.key;
+    key.color.set(L.keyColor);
+    key.castShadow = L.shadows;
+    if (lastShadows !== L.shadows) {
+      lastShadows = L.shadows;
+      entries.forEach(x => Object.values(x.mats).forEach(m => { m.needsUpdate = true; }));
+      floorMat.needsUpdate = true;
+    }
+    const ra = a + Math.PI * 0.85, re = 0.55, rd = s * 1.63;
+    rim.position.set(c.x + Math.sin(ra) * Math.cos(re) * rd, c.y + Math.sin(re) * rd, c.z + Math.cos(ra) * Math.cos(re) * rd);
+    rim.target.position.copy(c);
+    rim.intensity = L.rim;
+    hemi.intensity = L.fill;
+    marker.position.copy(c).addScaledVector(dir, s * 1.07);
+    marker.material.color.set(L.keyColor);
+    marker.visible = L.marker;
+
+    $('az').value = L.az; $('az-o').textContent = Math.round(L.az) + '°';
+    $('el').value = L.el; $('el-o').textContent = Math.round(L.el) + '°';
+    $('key').value = L.key; $('key-o').textContent = L.key.toFixed(2);
+    $('keyColor').value = L.keyColor;
+    $('fill').value = L.fill; $('fill-o').textContent = L.fill.toFixed(2);
+    $('rim').value = L.rim; $('rim-o').textContent = L.rim.toFixed(2);
+    $('shadows').checked = L.shadows;
+    $('marker').checked = L.marker;
+    $('spin').checked = L.spin;
+    $('dimsToggle').checked = L.dims;
+    need = true;
+  }
+  [['az', 'az'], ['el', 'el'], ['key', 'key'], ['fill', 'fill'], ['rim', 'rim']].forEach(p => {
+    $(p[0]).addEventListener('input', e => { L[p[1]] = parseFloat(e.target.value); applyLight(); });
+  });
+  $('keyColor').addEventListener('input', e => { L.keyColor = e.target.value; applyLight(); });
+  $('shadows').addEventListener('change', e => { L.shadows = e.target.checked; applyLight(); });
+  $('marker').addEventListener('change', e => { L.marker = e.target.checked; applyLight(); });
+  $('spin').addEventListener('change', e => { L.spin = e.target.checked; });
+  $('dimsToggle').addEventListener('change', e => { L.dims = e.target.checked; cur.dims.group.visible = L.dims; syncLabels(); need = true; });
+  document.querySelectorAll('[data-preset]').forEach(b => b.addEventListener('click', () => { Object.assign(L, PRESETS[b.dataset.preset]); applyLight(); }));
+
+  /* camera orbit */
+  const home = { az: 0.35, el: 0.22, dist: 235, min: 110, max: 420 };
+  let az = home.az, el = home.el, dist = home.dist;
+  function updateCamera() {
+    const c = cur.center;
+    camera.position.set(c.x + dist * Math.sin(az) * Math.cos(el), c.y + dist * Math.sin(el), c.z + dist * Math.cos(az) * Math.cos(el));
+    camera.lookAt(c);
+    need = true;
+  }
+  $('reset').addEventListener('click', () => { az = home.az; el = home.el; dist = home.dist; updateCamera(); });
+
+  /* frame the scene for one model: visibility, floor, clipping, shadows, camera range */
+  function setFrame(e) {
+    cur = e;
+    const s = e.size;
+    entries.forEach(x => { x.model.visible = x === e; x.dims.group.visible = x === e && L.dims; });
+    floor.scale.setScalar(s);
+    floor.position.set(e.center.x, 0, e.center.z);
+    camera.near = s * 0.02; camera.far = s * 30;
+    camera.updateProjectionMatrix();
+    const sc = key.shadow.camera;
+    sc.left = -s * 0.9; sc.right = s * 0.9; sc.top = s * 0.9; sc.bottom = -s * 0.9; sc.near = s * 0.06; sc.far = s * 4.2;
+    sc.updateProjectionMatrix();
+    key.shadow.normalBias = s * 0.003;
+    marker.scale.setScalar(s / 100);
+    home.dist = s * 2.35; home.min = s * 0.5; home.max = s * 4.5;
+    applyLight();
+  }
+
+  /* dimension labels (HTML over the canvas) */
+  let labelEls = [];
+  function syncLabels() {
+    $('dimlabels').textContent = '';
+    labelEls = [];
+    if (!L.dims) return;
+    cur.dims.labels.forEach(l => {
+      const d = document.createElement('div');
+      d.className = 'dimlabel';
+      d.textContent = l.text;
+      $('dimlabels').appendChild(d);
+      labelEls.push(d);
+    });
+  }
+  function placeLabels() {
+    const w = stage.clientWidth, h = stage.clientHeight;
+    labelEls.forEach((el, i) => {
+      const v = cur.dims.labels[i].pos.clone().project(camera);
+      el.style.display = v.z < 1 ? '' : 'none';
+      el.style.transform = 'translate(-50%,-50%) translate(' + ((v.x * 0.5 + 0.5) * w).toFixed(1) + 'px,' + ((-v.y * 0.5 + 0.5) * h).toFixed(1) + 'px)';
+    });
+  }
+
+  /* colour panel (rebuilt for each model) */
+  const SWATCHES = ['#E8A33D', '#F2C57C', '#D9822B', '#D8553F', '#B8324A', '#7A4FD1', '#3F6FE0', '#2FA3A6', '#4FA866', '#9AC24A', '#FFFFFF', '#8A93A6', '#3B2A2A', '#1F2430'];
+  let chipEls = {};
+  SWATCHES.forEach(hex => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.style.background = hex; b.setAttribute('aria-label', 'Use ' + hex);
+    b.addEventListener('click', () => setColour(cur.selected, hex));
+    $('swatches').appendChild(b);
+  });
+  let thumbTimer = 0;
+  function setColour(id, hex) {
+    cur.colours[id] = hex.toLowerCase();
+    cur.mats[id].color.set(hex);
+    if (chipEls[id]) chipEls[id].querySelector('i').style.background = hex;
+    if (id === cur.selected) { $('picker').value = hex.toLowerCase(); $('hex').textContent = hex.toUpperCase(); }
+    need = true;
+    const e = cur;
+    clearTimeout(thumbTimer);
+    thumbTimer = setTimeout(() => refreshThumb(e), 600);
+  }
+  function selectGroup(id) {
+    cur.selected = id;
+    cur.groups.forEach(g => chipEls[g.id].setAttribute('aria-pressed', String(g.id === id)));
+    $('picker').value = cur.colours[id];
+    $('hex').textContent = cur.colours[id].toUpperCase();
+  }
+  function buildColourUI() {
+    $('chips').textContent = '';
+    chipEls = {};
+    cur.groups.forEach(g => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'chipbtn chip'; b.setAttribute('aria-pressed', 'false');
+      b.innerHTML = '<i></i><span></span>';
+      b.querySelector('i').style.background = cur.colours[g.id];
+      b.querySelector('span').textContent = g.label;
+      b.addEventListener('click', () => selectGroup(g.id));
+      $('chips').appendChild(b);
+      chipEls[g.id] = b;
+    });
+    selectGroup(cur.selected);
+    $('rough').value = cur.rough;
+    $('rough-o').textContent = cur.rough.toFixed(2);
+  }
+  $('picker').addEventListener('input', e => setColour(cur.selected, e.target.value));
+  $('rough').addEventListener('input', e => {
+    const r = parseFloat(e.target.value);
+    cur.rough = r;
+    cur.groups.forEach(g => { if (!g.fixed) cur.mats[g.id].roughness = r; });
+    $('rough-o').textContent = r.toFixed(2);
+    need = true;
+    const en = cur;
+    clearTimeout(thumbTimer);
+    thumbTimer = setTimeout(() => refreshThumb(en), 600);
+  });
+  $('resetColours').addEventListener('click', () => {
+    cur.groups.forEach(g => { setColour(g.id, g.color); if (!g.fixed) cur.mats[g.id].roughness = g.rough === undefined ? 0.55 : g.rough; });
+    cur.rough = 0.55; $('rough').value = 0.55; $('rough-o').textContent = '0.55';
+  });
+
+  /* tabs */
+  function showTab(name) {
+    document.querySelectorAll('[data-tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
+    ['light', 'colour', 'export'].forEach(n => { $('p-' + n).hidden = n !== name; });
+  }
+  document.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+
+  /* orbit input */
+  const ptrs = new Map();
+  let down = null, pinch = 0;
+  const pdist = () => { const p = [...ptrs.values()]; return Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y); };
+  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+  function pick(e) {
+    const r = canvas.getBoundingClientRect();
+    ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    const hit = ray.intersectObjects(cur.meshes, false)[0];
+    if (hit) { selectGroup(hit.object.userData.group); showTab('colour'); }
+  }
+  canvas.addEventListener('pointerdown', e => {
+    try { canvas.setPointerCapture(e.pointerId); } catch (x) {}
+    ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (ptrs.size === 1) down = { x: e.clientX, y: e.clientY, moved: false };
+    else { if (down) down.moved = true; pinch = pdist(); }
+  });
+  canvas.addEventListener('pointermove', e => {
+    const p = ptrs.get(e.pointerId);
+    if (!p) return;
+    const dx = e.clientX - p.x, dy = e.clientY - p.y;
+    p.x = e.clientX; p.y = e.clientY;
+    if (ptrs.size === 1) {
+      if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5) down.moved = true;
+      az -= dx * 0.008;
+      el = clamp(el + dy * 0.006, -0.05, 1.35);
+    } else if (ptrs.size === 2) {
+      const d = pdist();
+      if (pinch) dist = clamp(dist * pinch / d, home.min, home.max);
+      pinch = d;
+    }
+    updateCamera();
+  });
+  function endPtr(e) {
+    const had = ptrs.delete(e.pointerId);
+    if (had && ptrs.size === 0 && down && !down.moved && e.type === 'pointerup') pick(e);
+    if (ptrs.size === 0) down = null;
+    pinch = 0;
+  }
+  canvas.addEventListener('pointerup', endPtr);
+  canvas.addEventListener('pointercancel', endPtr);
+  canvas.addEventListener('wheel', e => { e.preventDefault(); dist = clamp(dist * Math.exp(e.deltaY * 0.001), home.min, home.max); updateCamera(); }, { passive: false });
+
+  /* sizing and theme */
+  function resize() {
+    const w = stage.clientWidth, h = stage.clientHeight;
+    if (!w || !h) return;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    need = true;
+  }
+  function themeColours() {
+    const cs = getComputedStyle(document.documentElement);
+    renderer.setClearColor(new THREE.Color(cs.getPropertyValue('--stage').trim() || '#e1e6ee'), 1);
+    floorMat.color.set(cs.getPropertyValue('--floor').trim() || '#f3f5f9');
+    dimMat.color.set(cs.getPropertyValue('--fg').trim() || '#1b2030');
+    need = true;
+    entries.forEach(e => { if (e.thumb) refreshThumb(e); });
+  }
+  new ResizeObserver(resize).observe(stage);
+  try { window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', themeColours); } catch (e) {}
+  new MutationObserver(themeColours).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  /* model cards and thumbnails */
+  function metaText(e) { const s = e.size3; return r1(s.x) + ' × ' + r1(s.z) + ' × ' + r1(s.y) + ' mm'; }
+  function renderCards() {
+    const nav = $('models');
+    nav.textContent = '';
+    entries.forEach(e => {
+      const wrap = document.createElement('div');
+      wrap.className = 'cardwrap';
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'card'; b.dataset.model = e.id;
+      b.setAttribute('aria-pressed', String(e === cur));
+      b.innerHTML = '<img class="thumb" alt="" width="160" height="120"><span class="name"></span><span class="meta"></span>';
+      if (e.thumb) b.querySelector('img').src = e.thumb;
+      b.querySelector('.name').textContent = e.label;
+      b.querySelector('.meta').textContent = metaText(e);
+      b.addEventListener('click', () => activate(e));
+      wrap.appendChild(b);
+      if (e.user) {
+        const tools = document.createElement('div');
+        tools.className = 'cardtools';
+        if (e.record.method === 'trace') {
+          const adj = document.createElement('button');
+          adj.type = 'button'; adj.textContent = 'Adjust'; adj.setAttribute('aria-label', 'Adjust ' + e.label);
+          adj.addEventListener('click', () => openAdjust(e));
+          tools.appendChild(adj);
+        }
+        const del = document.createElement('button');
+        del.type = 'button'; del.textContent = '✕'; del.setAttribute('aria-label', 'Remove ' + e.label);
+        del.addEventListener('click', () => removeEntry(e));
+        tools.appendChild(del);
+        wrap.appendChild(tools);
+      }
+      nav.appendChild(wrap);
+    });
+    const add = document.createElement('button');
+    add.type = 'button'; add.className = 'card add';
+    add.innerHTML = '<span class="thumb" aria-hidden="true">+</span><span class="name">New from sketch</span><span class="meta">Photo or scan of a drawing</span>';
+    add.addEventListener('click', () => $('file').click());
+    nav.appendChild(add);
+  }
+  function snapshot(e, w, h) {
+    const prev = cur, saved = { az, el, dist };
+    setFrame(e);
+    e.dims.group.visible = false;
+    marker.visible = false;
+    az = home.az; el = home.el; dist = home.dist;
+    updateCamera();
+    renderer.setPixelRatio(1);
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h; camera.updateProjectionMatrix();
+    renderer.render(scene, camera);
+    const url = canvas.toDataURL('image/jpeg', 0.85);
+    setFrame(prev);
+    az = saved.az; el = saved.el; dist = saved.dist;
+    updateCamera();
+    resize();
+    return url;
+  }
+  function refreshThumb(e) {
+    if (entries.indexOf(e) < 0) return;
+    e.thumb = snapshot(e, 320, 240);
+    const img = document.querySelector('[data-model="' + e.id + '"] img');
+    if (img) img.src = e.thumb;
+  }
+  function activate(e) {
+    setFrame(e);
+    az = home.az; el = home.el; dist = home.dist;
+    updateCamera();
+    document.querySelectorAll('[data-model]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.model === e.id)));
+    $('title').textContent = e.label;
+    const s = e.size3;
+    $('note').textContent = e.names[0] + ' ' + r1(s.x) + ' × ' + e.names[1] + ' ' + r1(s.z) + ' × ' + e.names[2] + ' ' + r1(s.y) + ' mm' + (e.note ? ' · ' + e.note : '');
+    buildColourUI();
+    syncLabels();
+    status('');
+  }
+  function removeEntry(e) {
+    if (!window.confirm('Remove "' + e.label + '" from this browser?')) return;
+    const i = entries.indexOf(e);
+    disposeEntry(e);
+    entries.splice(i, 1);
+    persist();
+    if (cur === e) cur = entries[Math.max(0, i - 1)];
+    renderCards();
+    activate(cur);
+  }
+  // Adds or replaces a user model, renders its card and shows it.
+  function placeUserModel(def, replacing) {
+    let at;
+    if (replacing) { at = entries.indexOf(replacing); disposeEntry(replacing); entries.splice(at, 1); }
+    const e = addEntry(def, at);
+    persist();
+    renderCards();
+    refreshThumb(e);
+    activate(e);
+    return e;
+  }
+
+  /* render loop */
+  let last = performance.now();
+  function frame(t) {
+    const dt = Math.min((t - last) / 1000, 0.1);
+    last = t;
+    if (L.spin) { az += dt * 0.6; updateCamera(); }
+    if (need) { need = false; renderer.render(scene, camera); if (L.dims) placeLabels(); }
+    requestAnimationFrame(frame);
+  }
+
+  /* ---------- new model from a sketch photo ---------- */
+  const dlg = $('dlg');
+  const D = { img: null, imgUrl: null, method: 'trace', editing: null, tr: null, busy: null };
+  const TRACE_DEFAULTS = { sens: 0.14, gap: 1, crop: 3, dropEdge: true, holes: false, size: 100, thick: 20, round: 0.35, engrave: 1.5, smooth: 3, detail: 170 };
+  const TP = [['tSens', 'sens', v => Math.round(v * 100) + '%'], ['tGap', 'gap', v => v === 0 ? 'Off' : v + (v === 1 ? ' step' : ' steps')], ['tCrop', 'crop', v => v + '%'],
+    ['tSize', 'size', v => fmtDim(v)], ['tThick', 'thick', v => fmtDim(v)], ['tRound', 'round', v => v < 0.12 ? 'Slab' : v > 0.8 ? 'Pebble' : Math.round(v * 100) + '%'],
+    ['tEngrave', 'engrave', v => v === 0 ? 'Off' : v.toFixed(1) + ' mm'], ['tSmooth', 'smooth', v => v === 0 ? 'Off' : String(v)]];
+  let params = Object.assign({}, TRACE_DEFAULTS);
+  try { Object.assign(params, JSON.parse(store.get('smv-trace-params') || '{}')); } catch (e) {}
+
+  function readImage(src) {
+    return new Promise((res, rej) => {
+      const img = new Image();
+      img.onload = () => res(img);
+      img.onerror = () => rej(new Error('That file could not be read as an image.'));
+      img.src = src;
+    });
+  }
+  // Downscaled JPEG copy. Browsers apply the photo's EXIF rotation when drawing, so portrait phone photos come out upright.
+  function jpegOf(img, max, q) {
+    const s = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(img.naturalWidth * s)); c.height = Math.max(1, Math.round(img.naturalHeight * s));
+    const x = c.getContext('2d');
+    x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+    x.drawImage(img, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', q);
+  }
+  function cropRect(img, crop) {
+    const w = img.naturalWidth, h = img.naturalHeight, cx = Math.round(w * crop / 100), cy = Math.round(h * crop / 100);
+    return { x: cx, y: cy, w: Math.max(1, w - 2 * cx), h: Math.max(1, h - 2 * cy) };
+  }
+  function analysisImage(img, p) {
+    const r = cropRect(img, p.crop), s = (p.detail * 2) / Math.max(r.w, r.h);
+    const c = document.createElement('canvas');
+    c.width = Math.max(4, Math.round(r.w * s)); c.height = Math.max(4, Math.round(r.h * s));
+    const x = c.getContext('2d', { willReadFrequently: true });
+    x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+    x.imageSmoothingQuality = 'high';
+    x.drawImage(img, r.x, r.y, r.w, r.h, 0, 0, c.width, c.height);
+    return { w: c.width, h: c.height, data: x.getImageData(0, 0, c.width, c.height).data };
+  }
+  function runTrace(img, p) { return traceSketch(analysisImage(img, p), p); }
+
+  function dstatus(msg) { $('dlgStatus').textContent = msg; }
+  function syncParamUI() {
+    TP.forEach(t => { $(t[0]).value = params[t[1]]; $(t[0] + '-o').textContent = t[2](params[t[1]]); });
+    $('tEdge').checked = params.dropEdge;
+    $('tHoles').checked = params.holes;
+    $('tDetail').value = String(params.detail);
+  }
+  function setMethod(m) {
+    D.method = m;
+    document.querySelectorAll('[data-method]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.method === m)));
+    $('opt-trace').hidden = m !== 'trace';
+    $('opt-ai').hidden = m !== 'ai';
+    $('pvLegend').hidden = m !== 'trace';
+    $('dlgCreate').textContent = D.editing ? 'Update model' : m === 'ai' ? 'Build with Claude' : 'Create model';
+    drawPreview();
+  }
+  document.querySelectorAll('[data-method]').forEach(b => b.addEventListener('click', () => { if (!D.editing) setMethod(b.dataset.method); }));
+
+  let pvTimer = 0;
+  function drawPreview() {
+    clearTimeout(pvTimer);
+    pvTimer = setTimeout(drawPreviewNow, 60);
+  }
+  function drawPreviewNow() {
+    if (!D.img) return;
+    const pv = $('pv'), ctx = pv.getContext('2d');
+    const p = params;
+    const r = D.method === 'trace' ? cropRect(D.img, p.crop) : { x: 0, y: 0, w: D.img.naturalWidth, h: D.img.naturalHeight };
+    const W = 720, H = Math.round(W * r.h / r.w);
+    pv.width = W; pv.height = H;
+    ctx.drawImage(D.img, r.x, r.y, r.w, r.h, 0, 0, W, H);
+    if (D.method !== 'trace') { $('pvNote').textContent = ''; dstatus(''); return; }
+    const tr = runTrace(D.img, p);
+    D.tr = tr;
+    const cw = W / tr.gw, ch = H / tr.gh;
+    ctx.fillStyle = 'rgba(43,69,201,0.5)';
+    for (let y = 0; y < tr.gh; y++) for (let x = 0; x < tr.gw; x++) if (tr.mask[y * tr.gw + x]) ctx.fillRect(x * cw, y * ch, cw + 0.5, ch + 0.5);
+    if (p.engrave > 0) {
+      ctx.fillStyle = '#d8553f';
+      for (let i = 0; i < tr.inner.length; i++) if (tr.inner[i]) ctx.fillRect((i % tr.gw) * cw, ((i / tr.gw) | 0) * ch, cw + 0.5, ch + 0.5);
+    }
+    if (!tr.cells) {
+      $('pvNote').textContent = 'No closed shape found. Raise ink sensitivity or close gaps, or untick "Ignore marks touching the photo edge".';
+    } else {
+      const bw = tr.bbox.x1 - tr.bbox.x0 + 1, bh = tr.bbox.y1 - tr.bbox.y0 + 1, s = p.size / Math.max(bw, bh);
+      $('pvNote').textContent = (tr.parts === 1 ? 'One shape' : tr.parts + ' shapes') + ' found · about ' + r1(bw * s) + ' × ' + r1(bh * s) + ' mm, ' + fmtDim(p.thick) + ' thick.' +
+        (tr.parts > 1 ? ' Separate shapes become one model.' : '') + ' If the blue fills the whole page, raise "Trim photo edges".';
+    }
+  }
+  TP.forEach(t => $(t[0]).addEventListener('input', e => { params[t[1]] = parseFloat(e.target.value); $(t[0] + '-o').textContent = t[2](params[t[1]]); drawPreview(); }));
+  $('tEdge').addEventListener('change', e => { params.dropEdge = e.target.checked; drawPreview(); });
+  $('tHoles').addEventListener('change', e => { params.holes = e.target.checked; drawPreview(); });
+  $('tDetail').addEventListener('change', e => { params.detail = parseInt(e.target.value, 10); drawPreview(); });
+
+  async function openWithFile(file) {
+    if (!file) return;
+    if (!/^image\//.test(file.type) && !/\.(jpe?g|png|webp|gif|bmp|heic|heif)$/i.test(file.name)) { status('Choose an image file (JPEG or PNG).'); return; }
+    let img;
+    try {
+      // Keep a modest copy only: enough detail for tracing and for Claude, small enough to store.
+      const tmpUrl = URL.createObjectURL(file);
+      const full = await readImage(tmpUrl);
+      URL.revokeObjectURL(tmpUrl);
+      const small = jpegOf(full, 1568, 0.85);
+      img = await readImage(small);
+      D.imgUrl = small;
+    } catch (err) { status(err.message + (/heic|heif/i.test(file.name) ? ' HEIC photos may not open in this browser; export the photo as JPEG.' : '')); return; }
+    D.img = img; D.editing = null;
+    $('dlgTitle').textContent = 'New model from sketch';
+    $('nName').value = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').replace(/^(img|dsc|pxl|photo)\s*\d.*$/i, '').trim().slice(0, 60) || 'My sketch';
+    $('dlgOtherPhoto').hidden = false;
+    document.querySelectorAll('[data-method]').forEach(b => { b.disabled = false; });
+    syncParamUI();
+    setMethod(D.method);
+    dstatus('');
+    if (!dlg.open) dlg.showModal();
+  }
+  async function openAdjust(e) {
+    try { D.img = await readImage(e.record.image); } catch (err) { status('The saved photo for this model could not be read.'); return; }
+    D.imgUrl = e.record.image; D.editing = e;
+    params = Object.assign({}, TRACE_DEFAULTS, e.record.params);
+    $('dlgTitle').textContent = 'Adjust ' + e.label;
+    $('nName').value = e.label;
+    $('dlgOtherPhoto').hidden = true;
+    document.querySelectorAll('[data-method]').forEach(b => { b.disabled = b.dataset.method !== 'trace'; });
+    syncParamUI();
+    setMethod('trace');
+    dstatus('');
+    dlg.showModal();
+  }
+  $('file').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; openWithFile(f); });
+  $('dlgOtherPhoto').addEventListener('click', () => $('file').click());
+  $('dlgClose').addEventListener('click', () => { if (D.busy) D.busy.abort(); dlg.close(); });
+  dlg.addEventListener('close', () => { if (D.busy) D.busy.abort(); });
+
+  // Drop a photo anywhere on the page.
+  let dragDepth = 0;
+  document.addEventListener('dragenter', e => { if (e.dataTransfer && [...e.dataTransfer.types].indexOf('Files') >= 0) { dragDepth++; document.body.classList.add('dropping'); } });
+  document.addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) document.body.classList.remove('dropping'); });
+  document.addEventListener('dragover', e => { if (e.dataTransfer && [...e.dataTransfer.types].indexOf('Files') >= 0) e.preventDefault(); });
+  document.addEventListener('drop', e => {
+    dragDepth = 0; document.body.classList.remove('dropping');
+    const f = e.dataTransfer && e.dataTransfer.files[0];
+    if (f) { e.preventDefault(); openWithFile(f); }
+  });
+
+  /* Claude API (direct from the browser with the owner's key) */
+  const KEY_STORE = 'smv-anthropic-key';
+  const savedKey = store.get(KEY_STORE);
+  if (savedKey) { $('aKey').value = savedKey; $('aRemember').checked = true; }
+  $('aRemember').addEventListener('change', e => { if (!e.target.checked) store.del(KEY_STORE); });
+
+  async function askClaude(imageDataUrl, notes, apiKey, model, signal) {
+    const text = 'Build a 3D model of the object in this sketch.' + (notes ? '\n\nNotes from the person who drew it:\n' + notes : '');
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      signal,
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2026-10-21',
+        'anthropic-beta': 'server-side-fallback-2026-07-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 16000,
+        thinking: { type: 'adaptive' },
+        output_config: { effort: 'high', format: { type: 'json_schema', schema: SPEC_SCHEMA } },
+        fallbacks: 'default',
+        system: SPEC_SYSTEM,
+        messages: [{ role: 'user', content: [
+          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageDataUrl.split(',')[1] } },
+          { type: 'text', text }
+        ] }]
+      })
+    });
+    let j = null;
+    try { j = await res.json(); } catch (e) {}
+    if (!res.ok) {
+      const msg = j && j.error && j.error.message ? j.error.message : 'HTTP ' + res.status;
+      if (res.status === 401) throw new Error('The API key was not accepted. Check it and try again.');
+      if (res.status === 429) throw new Error('Rate limited by the API. Wait a minute and try again.');
+      throw new Error('Claude API error: ' + msg);
+    }
+    if (j.stop_reason === 'refusal') throw new Error('Claude declined to model this image. Try the Trace option instead.');
+    if (j.stop_reason === 'max_tokens') throw new Error('The answer was cut off. Try a simpler sketch or add notes to narrow it down.');
+    const out = (j.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+    let spec;
+    try { spec = JSON.parse(out); } catch (e) { throw new Error('Claude replied in an unexpected format. Try again.'); }
+    return normalizeSpec(spec);
+  }
+
+  $('dlgStop').addEventListener('click', () => { if (D.busy) D.busy.abort(); });
+  $('dlgCreate').addEventListener('click', async () => {
+    if (!D.img || D.busy) return;
+    const label = $('nName').value.trim() || 'My sketch';
+    if (D.method === 'trace') {
+      const tr = D.tr || runTrace(D.img, params);
+      if (!tr.cells) { dstatus('There is no shape to build yet. See the tip under the preview.'); return; }
+      store.set('smv-trace-params', JSON.stringify(params));
+      const p = Object.assign({}, params, { colour: (D.editing && D.editing.record.params.colour) || tr.colour || null });
+      const rec = { id: D.editing ? D.editing.id : 'u' + Date.now().toString(36), label, method: 'trace', params: p, image: D.imgUrl };
+      placeUserModel(defFromRecord(rec, tr), D.editing);
+      dlg.close();
+      return;
+    }
+    const apiKey = $('aKey').value.trim();
+    if (!apiKey) { dstatus('Add your Anthropic API key first.'); $('aKey').focus(); return; }
+    if ($('aRemember').checked) store.set(KEY_STORE, apiKey);
+    const ctl = new AbortController();
+    D.busy = ctl;
+    $('dlgCreate').disabled = true; $('dlgStop').hidden = false;
+    const t0 = Date.now();
+    const tick = setInterval(() => dstatus('Claude is reading your sketch… ' + Math.round((Date.now() - t0) / 1000) + ' s (usually under a minute or two)'), 500);
+    try {
+      const spec = await askClaude(D.imgUrl, $('aNotes').value.trim(), apiKey, $('aModel').value, ctl.signal);
+      if (!spec.parts.length) throw new Error('Claude returned no parts. Try again or add notes.');
+      const rec = { id: 'u' + Date.now().toString(36), label: label === 'My sketch' ? spec.name : label, method: 'ai', spec };
+      clearInterval(tick);
+      placeUserModel(defFromRecord(rec));
+      dlg.close();
+    } catch (err) {
+      clearInterval(tick);
+      dstatus(err.name === 'AbortError' ? 'Stopped.' : (err.message === 'Failed to fetch' ? 'Could not reach api.anthropic.com. Check the connection.' : err.message));
+    } finally {
+      D.busy = null;
+      $('dlgCreate').disabled = false; $('dlgStop').hidden = true;
+    }
+  });
+
+  /* export */
+  let downloads = null;
+  let jpgSize = 1080;
+  function status(msg) { $('status').textContent = msg; if (msg) showTab('export'); }
+  if (window.claude && window.claude.use) {
+    window.claude.use('downloads').then(d => { downloads = d; }).catch(() => {});
+  }
+  document.querySelectorAll('[data-size]').forEach(b => b.addEventListener('click', () => {
+    jpgSize = parseInt(b.dataset.size, 10);
+    document.querySelectorAll('[data-size]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  }));
+  // Outside Claude (GitHub Pages, local file) there is no `downloads` capability, so use a normal browser download.
+  function localDownload(filename, data) {
+    const blob = data instanceof Blob ? data : new Blob([data]);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+  async function save(filename, data) {
+    if (!downloads) { localDownload(filename, data); status('Downloaded ' + filename + '.'); return; }
+    try { await downloads.save({ filename, data }); status('Saved ' + filename + '.'); }
+    catch (e) { status(e && e.code === 'declined' ? 'Save cancelled.' : 'Could not save: ' + ((e && (e.message || e.code)) || 'unknown error')); }
+  }
+  function drawLabels(ctx, w, h) {
+    const cs = getComputedStyle(document.documentElement);
+    const fg = cs.getPropertyValue('--fg').trim(), bg = cs.getPropertyValue('--surface').trim(), ln = cs.getPropertyValue('--line').trim();
+    const fs = Math.max(14, Math.round(w / 64));
+    ctx.font = '500 ' + fs + 'px "Helvetica Neue", Helvetica, Arial, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineWidth = 1;
+    cur.dims.labels.forEach(l => {
+      const v = l.pos.clone().project(camera);
+      if (v.z >= 1) return;
+      const x = (v.x * 0.5 + 0.5) * w, y = (-v.y * 0.5 + 0.5) * h;
+      const tw = ctx.measureText(l.text).width, pad = fs * 0.5;
+      ctx.fillStyle = bg; ctx.strokeStyle = ln;
+      ctx.fillRect(x - tw / 2 - pad, y - fs * 0.9, tw + pad * 2, fs * 1.8);
+      ctx.strokeRect(x - tw / 2 - pad, y - fs * 0.9, tw + pad * 2, fs * 1.8);
+      ctx.fillStyle = fg;
+      ctx.fillText(l.text, x, y + 1);
+    });
+  }
+  $('saveJpg').addEventListener('click', async () => {
+    const aspect = stage.clientWidth / stage.clientHeight;
+    const w = jpgSize, h = Math.round(w / aspect);
+    const wasMarker = marker.visible;
+    marker.visible = false;
+    renderer.setPixelRatio(1);
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h; camera.updateProjectionMatrix();
+    renderer.render(scene, camera);
+    const out = document.createElement('canvas');
+    out.width = w; out.height = h;
+    const ctx = out.getContext('2d');
+    ctx.drawImage(canvas, 0, 0, w, h);
+    if (L.dims) drawLabels(ctx, w, h);
+    marker.visible = wasMarker;
+    resize();
+    const blob = await new Promise(r => out.toBlob(r, 'image/jpeg', 0.92));
+    if (!blob) { status('The image could not be created.'); return; }
+    await save(cur.file + '.jpg', blob);
+  });
+
+  const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+  function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+  function makeZip(files) {
+    const enc = new TextEncoder(), chunks = [], central = [];
+    let offset = 0;
+    const d = new Date();
+    const time = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+    const date = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+    files.forEach(f => {
+      const name = enc.encode(f.name), data = enc.encode(f.text), crc = crc32(data);
+      const lh = new DataView(new ArrayBuffer(30));
+      lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, 0, true);
+      lh.setUint16(10, time, true); lh.setUint16(12, date, true); lh.setUint32(14, crc, true);
+      lh.setUint32(18, data.length, true); lh.setUint32(22, data.length, true); lh.setUint16(26, name.length, true); lh.setUint16(28, 0, true);
+      chunks.push(new Uint8Array(lh.buffer), name, data);
+      const ch = new DataView(new ArrayBuffer(46));
+      ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true); ch.setUint16(10, 0, true);
+      ch.setUint16(12, time, true); ch.setUint16(14, date, true); ch.setUint32(16, crc, true);
+      ch.setUint32(20, data.length, true); ch.setUint32(24, data.length, true); ch.setUint16(28, name.length, true);
+      ch.setUint32(42, offset, true);
+      central.push(new Uint8Array(ch.buffer), name);
+      offset += 30 + name.length + data.length;
+    });
+    let csize = 0;
+    central.forEach(c => { csize += c.length; });
+    const end = new DataView(new ArrayBuffer(22));
+    end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true);
+    end.setUint32(12, csize, true); end.setUint32(16, offset, true);
+    return new Blob(chunks.concat(central, [new Uint8Array(end.buffer)]), { type: 'application/zip' });
+  }
+  $('saveObj').addEventListener('click', async () => {
+    cur.model.updateMatrixWorld(true);
+    const zip = makeZip([
+      { name: cur.file + '.obj', text: buildOBJ(cur.meshes, cur.file) },
+      { name: cur.file + '.mtl', text: buildMTL(cur.groups, cur.mats) }
+    ]);
+    await save(cur.file + '-obj.zip', zip);
+  });
+  $('saveObjOnly').addEventListener('click', async () => {
+    cur.model.updateMatrixWorld(true);
+    await save(cur.file + '.obj', new Blob([buildOBJ(cur.meshes, cur.file)], { type: 'text/plain' }));
+  });
+
+  /* start */
+  themeColours();
+  resize();
+  renderCards();
+  entries.forEach(e => refreshThumb(e));
+  activate(entries[0]);
+  requestAnimationFrame(frame);
+
+  // Restore the owner's saved models.
+  (async () => {
+    let recs = [];
+    try { recs = JSON.parse(store.get(STORE) || '[]'); } catch (e) {}
+    for (const rec of recs) {
+      try {
+        let def;
+        if (rec.method === 'ai') def = defFromRecord(Object.assign({}, rec, { spec: normalizeSpec(rec.spec) }));
+        else {
+          const img = await readImage(rec.image);
+          const tr = runTrace(img, Object.assign({}, TRACE_DEFAULTS, rec.params));
+          if (!tr.cells) continue;
+          def = defFromRecord(rec, tr);
+        }
+        const e = addEntry(def);
+        renderCards();
+        refreshThumb(e);
+      } catch (err) { /* skip a record that no longer builds */ }
+    }
+  })();
+
+  // Small hook for automated checks; not used by the page itself.
+  window.__smv = { entries: () => entries, openWithFile, traceSketch, normalizeSpec };
+})();
+</script>
+</body>
+</html>
